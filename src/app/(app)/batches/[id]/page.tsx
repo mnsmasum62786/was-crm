@@ -5,7 +5,9 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { ActionButton } from "@/components/interactive";
-import { markAttendanceAction } from "@/lib/actions";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { markAttendanceAction, registerContactToBatchAction } from "@/lib/actions";
 import { formatDate, formatBDT } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +50,26 @@ export default async function BatchDetail({
           <Stat label="Base conversions" value={String(conversions)} />
           <Stat label="Revenue" value={formatBDT(revenue)} />
         </div>
+
+        <Card>
+          <CardContent className="p-4">
+            <form
+              action={registerContactToBatchAction}
+              className="flex flex-wrap items-end gap-3"
+            >
+              <input type="hidden" name="batchId" value={batch.id} />
+              <div className="flex-1 min-w-[160px]">
+                <label className="text-xs font-medium text-muted-foreground">Phone</label>
+                <Input name="phone" required placeholder="01712345678" />
+              </div>
+              <div className="flex-1 min-w-[160px]">
+                <label className="text-xs font-medium text-muted-foreground">Name</label>
+                <Input name="name" placeholder="Full name" />
+              </div>
+              <Button type="submit">Register contact</Button>
+            </form>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent className="p-0">

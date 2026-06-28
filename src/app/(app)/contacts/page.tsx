@@ -42,7 +42,11 @@ export default async function ContactsPage({
       <PageHeader
         title="Contacts"
         description={`${contacts.length} shown · phone is primary identity`}
-      />
+      >
+        <Link href="/contacts/new">
+          <Button size="sm">+ New contact</Button>
+        </Link>
+      </PageHeader>
       <div className="space-y-4 p-6">
         <Card>
           <CardContent className="p-4">

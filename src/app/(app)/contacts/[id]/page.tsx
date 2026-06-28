@@ -15,6 +15,7 @@ import {
   addNoteAction,
   createDealAction,
   createTaskAction,
+  enrollFormAction,
 } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +40,11 @@ export default async function ContactDetail({
   });
   if (!contact) notFound();
 
+  const sequences = await prisma.sequence.findMany({
+    where: { status: "active" },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
   const waLink = whatsappLink(contact.phone);
   const addNote = addNoteAction.bind(null, contact.id);
 
@@ -207,6 +213,16 @@ export default async function ContactDetail({
               {contact.enrollments.length === 0 && (
                 <p className="text-muted-foreground">Not enrolled in any sequence.</p>
               )}
+              <form action={enrollFormAction} className="flex gap-2 border-t pt-3">
+                <input type="hidden" name="contactId" value={contact.id} />
+                <Select name="sequenceId" defaultValue="" className="flex-1">
+                  <option value="">Enroll into…</option>
+                  {sequences.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </Select>
+                <Button type="submit" size="sm">Enroll</Button>
+              </form>
             </CardContent>
           </Card>
         </div>

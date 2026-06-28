@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { prisma } from "./prisma";
 import { getCurrentUser } from "./rbac";
 import { upsertContactByPhone, setStage } from "./contacts";
@@ -30,20 +31,30 @@ async function uid() {
 // --------------------------- contacts ---------------------------
 
 export async function createContactAction(form: FormData) {
+  const source = (form.get("source") as string) || "manual";
+  const stage = (form.get("stage") as string) || null;
   const { contact } = await upsertContactByPhone({
     phone: String(form.get("phone") ?? ""),
     name: (form.get("name") as string) || null,
     email: (form.get("email") as string) || null,
+    fbProfileUrl: (form.get("fbProfileUrl") as string) || null,
     segment: ((form.get("segment") as string) || null) as Segment | null,
-    source: (form.get("source") as string) || "manual",
+    source,
+    stage: stage ? (stage as Stage) : null,
+    attributionPayload: {
+      utm_source: (form.get("utm_source") as string) || null,
+      utm_medium: (form.get("utm_medium") as string) || null,
+      utm_campaign: (form.get("utm_campaign") as string) || null,
+    },
   });
   const enrolled = await autoEnroll({
     triggerType: "lead_created",
     contactId: contact.id,
-    context: { source: "manual" },
+    context: { source, segment: form.get("segment") },
   });
   await kickEnrollments(enrolled);
   revalidatePath("/contacts");
+  redirect(`/contacts/${contact.id}`);
 }
 
 export async function changeStageAction(contactId: string, stageInput: string) {
@@ -148,6 +159,28 @@ export async function createBatchAction(form: FormData) {
   revalidatePath("/batches");
 }
 
+export async function registerContactToBatchAction(form: FormData) {
+  const batchId = String(form.get("batchId"));
+  const { contact } = await upsertContactByPhone({
+    phone: String(form.get("phone") ?? ""),
+    name: (form.get("name") as string) || null,
+    source: "workshop_registration",
+    stage: "workshop_registered",
+  });
+  await prisma.registration.upsert({
+    where: { contactId_batchId: { contactId: contact.id, batchId } },
+    create: { contactId: contact.id, batchId },
+    update: {},
+  });
+  const enrolled = await autoEnroll({
+    triggerType: "stage_changed",
+    contactId: contact.id,
+    context: { stage: "workshop_registered" },
+  });
+  await kickEnrollments(enrolled);
+  revalidatePath(`/batches/${batchId}`);
+}
+
 export async function markAttendanceAction(
   registrationId: string,
   field: "attendedDay1" | "attendedDay3",
@@ -247,6 +280,15 @@ export async function deleteStepAction(stepId: string, sequenceId: string) {
     )
   );
   revalidatePath(`/sequences/${sequenceId}`);
+}
+
+export async function enrollFormAction(form: FormData) {
+  const sequenceId = String(form.get("sequenceId"));
+  const contactId = String(form.get("contactId"));
+  if (!sequenceId || !contactId) return;
+  const e = await enrollContact({ sequenceId, contactId });
+  if (e) await kickEnrollments([e.id]);
+  revalidatePath(`/contacts/${contactId}`);
 }
 
 export async function enrollManualAction(sequenceId: string, contactId: string) {
