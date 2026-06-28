@@ -1,0 +1,443 @@
+// WAS CRM — Prisma schema
+// Self-hosted CRM + marketing automation for a 3-tier funnel.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ----------------------------- Enums -----------------------------
+
+enum Role {
+  founder
+  closer
+  support
+}
+
+enum Segment {
+  beginner
+  ad_expert
+  web_dev
+}
+
+enum Stage {
+  lead
+  workshop_registered
+  workshop_attended
+  base_member
+  vip_member
+  renewed
+  churned
+}
+
+enum DealTier {
+  workshop
+  base
+  vip
+  renewal
+}
+
+enum DealStatus {
+  pending
+  partial
+  paid
+  failed
+}
+
+enum MembershipTier {
+  base
+  vip
+}
+
+enum Engagement {
+  active
+  ghost
+  at_risk
+}
+
+enum TaskStatus {
+  open
+  done
+}
+
+enum Channel {
+  email
+  whatsapp
+  sms
+}
+
+enum TemplateCategory {
+  utility
+  marketing
+  transactional
+}
+
+enum WhatsappApprovalStatus {
+  none
+  pending
+  approved
+  rejected
+}
+
+enum SequenceStatus {
+  active
+  paused
+}
+
+enum StepType {
+  email
+  whatsapp
+  sms
+  task
+  delay
+  condition
+}
+
+enum DelayUnit {
+  min
+  hour
+  day
+}
+
+enum EnrollmentStatus {
+  active
+  completed
+  exited
+}
+
+enum MessageDirection {
+  out
+  in
+}
+
+enum MessageStatus {
+  queued
+  sent
+  delivered
+  read
+  failed
+}
+
+enum BatchStatus {
+  upcoming
+  running
+  completed
+  cancelled
+}
+
+enum CampaignStatus {
+  draft
+  scheduled
+  sending
+  sent
+  cancelled
+}
+
+// ----------------------------- Models -----------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(closer)
+  createdAt    DateTime @default(now())
+
+  assignedContacts Contact[]  @relation("AssignedContacts")
+  assignedTasks    Task[]     @relation("AssignedTasks")
+  auditLogs        AuditLog[]
+}
+
+model Contact {
+  id           String   @id @default(cuid())
+  phone        String   @unique // E.164, primary identity
+  name         String?
+  email        String?
+  fbProfileUrl String?
+  segment      Segment?
+  stage        Stage    @default(lead)
+  source       String?
+
+  // Attribution
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmContent  String?
+  utmTerm     String?
+  fbclid      String?
+  fbp         String?
+  fbc         String?
+  referrer    String?
+
+  assignedToId String?
+  assignedTo   User?    @relation("AssignedContacts", fields: [assignedToId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tags          ContactTag[]
+  registrations Registration[]
+  deals         Deal[]
+  memberships   Membership[]
+  tasks         Task[]
+  activities    Activity[]
+  consents      Consent[]
+  enrollments   Enrollment[]
+  messages      Message[]
+
+  @@index([stage])
+  @@index([segment])
+  @@index([source])
+  @@index([assignedToId])
+}
+
+model Tag {
+  id       String       @id @default(cuid())
+  name     String       @unique
+  contacts ContactTag[]
+}
+
+model ContactTag {
+  contactId String
+  tagId     String
+  createdAt DateTime @default(now())
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+}
+
+model Batch {
+  id           String         @id @default(cuid())
+  name         String
+  workshopDate DateTime
+  status       BatchStatus    @default(upcoming)
+  createdAt    DateTime       @default(now())
+  registrations Registration[]
+}
+
+model Registration {
+  id           String   @id @default(cuid())
+  contactId    String
+  batchId      String
+  registeredAt DateTime @default(now())
+  attendedDay1 Boolean  @default(false)
+  attendedDay3 Boolean  @default(false)
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  batch   Batch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, batchId])
+}
+
+model Deal {
+  id              String     @id @default(cuid())
+  contactId       String
+  tier            DealTier
+  amount          Int // BDT, whole taka
+  status          DealStatus @default(pending)
+  paidAt          DateTime?
+  installmentPlan Json?
+  lostReason      String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+  @@index([status])
+  @@index([tier])
+}
+
+model Membership {
+  id          String         @id @default(cuid())
+  contactId   String
+  tier        MembershipTier
+  startDate   DateTime       @default(now())
+  expiryDate  DateTime?
+  renewalDate DateTime?
+  isActive    Boolean        @default(true)
+  engagement  Engagement     @default(active)
+  createdAt   DateTime       @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+  @@index([isActive])
+  @@index([expiryDate])
+}
+
+model Task {
+  id           String     @id @default(cuid())
+  contactId    String?
+  assignedToId String?
+  title        String
+  notes        String?
+  dueAt        DateTime?
+  status       TaskStatus @default(open)
+  createdAt    DateTime   @default(now())
+
+  contact    Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  assignedTo User?    @relation("AssignedTasks", fields: [assignedToId], references: [id])
+
+  @@index([assignedToId])
+  @@index([status])
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  contactId String
+  type      String // e.g. lead_created, stage_changed, message_sent, payment, note
+  channel   String? // email | whatsapp | sms | system
+  summary   String
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+  @@index([createdAt])
+}
+
+model Consent {
+  id         String    @id @default(cuid())
+  contactId  String
+  channel    Channel
+  optedIn    Boolean   @default(true)
+  optedOutAt DateTime?
+  source     String?
+  updatedAt  DateTime  @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, channel])
+}
+
+model Template {
+  id                     String                 @id @default(cuid())
+  channel                Channel
+  name                   String                 @unique
+  category               TemplateCategory       @default(utility)
+  whatsappApprovalStatus WhatsappApprovalStatus @default(none)
+  subject                String?
+  body                   String
+  variables              Json?
+  createdAt              DateTime               @default(now())
+
+  steps     SequenceStep[]
+  messages  Message[]
+  campaigns Campaign[]
+}
+
+model Sequence {
+  id            String         @id @default(cuid())
+  name          String         @unique
+  status        SequenceStatus @default(active)
+  triggerType   String // lead_created | stage_changed | payment_status | tag_added | membership_expiring | no_action_after_x | manual_enroll
+  triggerFilter Json?
+  exitConditions Json?
+  createdAt     DateTime       @default(now())
+
+  steps       SequenceStep[]
+  enrollments Enrollment[]
+}
+
+model SequenceStep {
+  id            String    @id @default(cuid())
+  sequenceId    String
+  order         Int
+  type          StepType
+  delayAmount   Int?
+  delayUnit     DelayUnit?
+  templateId    String?
+  conditionJson Json?
+  content       String?
+
+  sequence Sequence  @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  template Template? @relation(fields: [templateId], references: [id])
+
+  @@index([sequenceId])
+}
+
+model Enrollment {
+  id          String           @id @default(cuid())
+  sequenceId  String
+  contactId   String
+  currentStep Int              @default(0)
+  status      EnrollmentStatus @default(active)
+  exitReason  String?
+  enrolledAt  DateTime         @default(now())
+  nextRunAt   DateTime?
+
+  sequence Sequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([sequenceId, contactId])
+  @@index([status])
+}
+
+model Message {
+  id                String           @id @default(cuid())
+  contactId         String
+  channel           Channel
+  direction         MessageDirection
+  templateId        String?
+  body              String
+  status            MessageStatus    @default(queued)
+  providerMessageId String?
+  meta              Json?
+  createdAt         DateTime         @default(now())
+  deliveredAt       DateTime?
+  readAt            DateTime?
+
+  contact  Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  template Template? @relation(fields: [templateId], references: [id])
+
+  @@index([contactId])
+  @@index([channel])
+  @@index([direction])
+}
+
+model Campaign {
+  id             String         @id @default(cuid())
+  name           String
+  channel        Channel
+  audienceFilter Json?
+  templateId     String?
+  scheduledAt    DateTime?
+  status         CampaignStatus @default(draft)
+  stats          Json?
+  createdAt      DateTime       @default(now())
+
+  template Template? @relation(fields: [templateId], references: [id])
+}
+
+model IdempotencyKey {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  scope     String
+  createdAt DateTime @default(now())
+
+  @@index([scope])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
